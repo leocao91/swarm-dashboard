@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Container Logs</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 600px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .highlight {
+            background-color: #d1e7dd;
+            animation: fadeOut 2s ease forwards;
+        }
+
+        @keyframes fadeOut {
+            from { background-color: #d1e7dd; }
+            to { background-color: transparent; }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container mt-4">
+        <h4>Container Logs</h4>
+        <pre id="log-output">{{ logs }}</pre>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Back to Dashboard</a>
+    </div>
+
+    <script>
+        function scrollToBottom() {
+            const pre = document.getElementById('log-output');
+            pre.scrollTop = pre.scrollHeight;
+        }
+
+        function fetchLogs() {
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newLog = doc.getElementById('log-output').innerText;
+                    const logOutput = document.getElementById('log-output');
+
+                    if (newLog !== logOutput.innerText) {
+                        logOutput.innerText = newLog;
+                        highlightNewLines(logOutput);
+                        scrollToBottom();
+                    }
+                })
+                .catch(err => console.error("Log fetch error:", err));
+        }
+
+        function highlightNewLines(preElement) {
+            const lines = preElement.innerText.split("\n");
+            const lastFew = lines.slice(-5);
+            preElement.innerHTML = lines.slice(0, -5).join("\n") + "\n" +
+                lastFew.map(line => `<span class="highlight">${line}</span>`).join("\n");
+        }
+
+        window.onload = function () {
+            scrollToBottom();
+            setInterval(fetchLogs, 10000);
+        };
+    </script>
+</body>
+</html>
+

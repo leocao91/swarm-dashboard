@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Docker Swarm Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand">Swarm Dashboard</span>
+        <div class="d-flex">
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-light">Logout</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-3">
+            <div class="input-group">
+                <label class="input-group-text" for="stackSelect">Stack</label>
+                <select class="form-select" name="stack" id="stackSelect" onchange="this.form.submit()">
+                    <option value="">-- All Stacks --</option>
+                    {% for stack in stack_names %}
+                        <option value="{{ stack }}" {% if selected_stack == stack %}selected{% endif %}>{{ stack }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="input-group">
+                <label class="input-group-text" for="nodeSelect">Worker Node</label>
+                <select class="form-select" name="node" id="nodeSelect" onchange="this.form.submit()">
+                    <option value="">-- All Nodes --</option>
+                    {% for node in nodes %}
+                        <option value="{{ node }}" {% if selected_node == node %}selected{% endif %}>{{ node }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="input-group">
+                <label class="input-group-text" for="statusSelect">Status</label>
+                <select class="form-select" name="status" id="statusSelect" onchange="this.form.submit()">
+                    <option value="">-- All Status --</option>
+                    <option value="ok" {% if selected_status == 'ok' %}selected{% endif %}>✅ OK</option>
+                    <option value="warning" {% if selected_status == 'warning' %}selected{% endif %}>⚠️ Warning</option>
+                    <option value="fail" {% if selected_status == 'fail' %}selected{% endif %}>❌ Fail</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="input-group">
+                <input type="text" name="search" class="form-control" placeholder="Search service..." value="{{ search_query or '' }}">
+                <button type="submit" class="btn btn-outline-primary">Search</button>
+            </div>
+        </div>
+    </form>
+
+    {% for stack, services in stacks.items() %}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">Stack: {{ stack }}</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle text-center">
+                    <thead>
+                        <tr>
+                            <th>Service Name</th>
+                            <th>Image</th>
+                            <th>Replicas</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                            <th>Logs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for svc in services %}
+                        <tr>
+                            <td>{{ svc.name }}</td>
+                            <td><code>{{ svc.image }}</code></td>
+                            <td>{{ svc.replicas }}</td>
+                            <td>
+                                {% if svc.status_icon == "✅" %}
+                                    <span class="badge bg-success">{{ svc.status_icon }}</span>
+                                {% elif svc.status_icon == "⚠️" %}
+                                    <span class="badge bg-warning text-dark">{{ svc.status_icon }}</span>
+                                {% else %}
+                                    <span class="badge bg-danger">{{ svc.status_icon }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form method="post" action="{{ url_for('update_service') }}">
+                                    <input type="hidden" name="service_id" value="{{ svc.id }}">
+                                    <button type="submit" class="btn btn-sm btn-warning">Force Update</button>
+                                </form>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('logs', service_id=svc.id) }}" class="btn btn-sm btn-secondary">View Logs</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+</body>
+</html>
