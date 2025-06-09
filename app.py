@@ -3,37 +3,54 @@ from functools import wraps
 import subprocess, shlex
 import docker
 import os
+from flask_pyoidc.flask_pyoidc import OIDCAuthentication
+from flask_pyoidc.provider_configuration import ProviderConfiguration
+from urllib.parse import urljoin
+from flask_session import Session
+
+try:
+    from oic.oic.message import ClientMetadata
+except ImportError:
+    class ClientMetadata:
+        def __init__(self, client_id, client_secret):
+            self.client_id = client_id
+            self.client_secret = client_secret
+
+        def to_dict(self):
+            return {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret
+            }
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "supersecretkey")
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = './flask_session_dir'
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+Session(app)
 client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
-USERNAME = os.environ.get('DASHBOARD_USERNAME', 'admin')
-PASSWORD = os.environ.get('DASHBOARD_PASSWORD', '@amin@')
+KEYCLOAK_BASE_URL = os.environ.get('KEYCLOAK_BASE_URL', 'https://localhost:8080/')
+KEYCLOAK_REALM = os.environ.get('KEYCLOAK_REALM', 'myrealm')
+KEYCLOAK_CLIENT_ID = os.environ.get('KEYCLOAK_CLIENT_ID', 'client-id')
+KEYCLOAK_CLIENT_SECRET = os.environ.get('KEYCLOAK_CLIENT_SECRET', 'client-secret')
+REDIRECT_URI = os.environ.get('REDIRECT_URI', 'http://localhost:5000/oidc_callback')
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
+app.config.update({
+    'OIDC_REDIRECT_URI': REDIRECT_URI
+})
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        if request.form['username'] == USERNAME and request.form['password'] == PASSWORD:
-            session['logged_in'] = True
-            return redirect(url_for('index'))
-        else:
-            return render_template('login.html', error='Invalid credentials')
-    return render_template('login.html')
+provider_config = ProviderConfiguration(
+    issuer=urljoin(KEYCLOAK_BASE_URL, f"realms/{KEYCLOAK_REALM}"),
+    client_metadata=ClientMetadata(
+        client_id=KEYCLOAK_CLIENT_ID,
+        client_secret=KEYCLOAK_CLIENT_SECRET
+    )
+)
 
-@app.route('/logout')
-@login_required
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('login'))
+auth = OIDCAuthentication({'default': provider_config}, app)
+
 
 def get_node_hostname(node_id):
     try:
@@ -43,7 +60,7 @@ def get_node_hostname(node_id):
         return None
 
 @app.route('/')
-@login_required
+@auth.oidc_auth('default')
 def index():
     selected_node = request.args.get('node')
     selected_stack = request.args.get('stack')
@@ -125,8 +142,13 @@ def index():
         search_query=search_query
     )
 
+@app.route('/logout')
+@auth.oidc_logout
+def logout():
+    return redirect('/')
+
 @app.route('/update_service', methods=['POST'])
-@login_required
+@auth.oidc_auth('default')
 def update_service():
     service_id = request.form.get('service_id')
     if not service_id:
@@ -171,7 +193,7 @@ def get_service_logs_filtered_by_task_id(service_name):
         return f"❌ Error fetching logs: {e.output.decode('utf-8')}"
 
 @app.route('/logs/<service_id>')
-@login_required
+@auth.oidc_auth('default')
 def logs(service_id):
     try:
         service = client.services.get(service_id)
@@ -182,4 +204,3 @@ def logs(service_id):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
-    

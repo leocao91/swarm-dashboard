@@ -1,3 +1,5 @@
 flask
 flask-login
 docker
+flask-pyoidc
+flask-session
