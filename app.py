@@ -1,13 +1,15 @@
-from flask import Flask, render_template, redirect, url_for, request, session
+from flask import Flask, render_template, redirect, url_for, request, session, jsonify
 from functools import wraps
 import subprocess, shlex
 import docker
 import os
+import datetime
 from flask_pyoidc.flask_pyoidc import OIDCAuthentication
 from flask_pyoidc.provider_configuration import ProviderConfiguration
 from urllib.parse import urljoin
 from flask_session import Session
 
+# Fallback cho ClientMetadata nếu thiếu thư viện
 try:
     from oic.oic.message import ClientMetadata
 except ImportError:
@@ -22,6 +24,7 @@ except ImportError:
                 "client_secret": self.client_secret
             }
 
+# Flask app setup
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "supersecretkey")
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -29,8 +32,12 @@ app.config['SESSION_FILE_DIR'] = './flask_session_dir'
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 Session(app)
-client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
+# Docker client
+client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+metrics_store = {}
+
+# Keycloak config
 KEYCLOAK_BASE_URL = os.environ.get('KEYCLOAK_BASE_URL', 'https://localhost:8080/')
 KEYCLOAK_REALM = os.environ.get('KEYCLOAK_REALM', 'myrealm')
 KEYCLOAK_CLIENT_ID = os.environ.get('KEYCLOAK_CLIENT_ID', 'client-id')
@@ -51,7 +58,6 @@ provider_config = ProviderConfiguration(
 
 auth = OIDCAuthentication({'default': provider_config}, app)
 
-
 def get_node_hostname(node_id):
     try:
         node = client.nodes.get(node_id)
@@ -69,10 +75,8 @@ def index():
 
     services = client.services.list()
     stacks = {}
-
     nodes = [n for n in client.nodes.list() if n.attrs['Spec']['Role'] == 'worker']
     node_names = [n.attrs['Description']['Hostname'] for n in nodes]
-
     stack_names = set()
 
     for service in services:
@@ -128,7 +132,8 @@ def index():
             'image': service.attrs['Spec']['TaskTemplate']['ContainerSpec']['Image'],
             'replicas': f"{running}/{total}",
             'status_icon': status_icon,
-            'status_class': status_class
+            'status_class': status_class,
+            'metrics': metrics_store.get(service_name, [])
         })
 
     return render_template(
@@ -202,5 +207,32 @@ def logs(service_id):
     except Exception as e:
         return render_template('logs.html', logs=f"❌ Error: {e}")
 
+EXPECTED_TOKEN = os.environ.get('EXPECTED_TOKEN', 'default-secret-token')
+
+@app.route('/api/push-metrics', methods=['POST'])
+def push_metrics():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer ") or auth_header.split(" ")[1] != EXPECTED_TOKEN:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json()
+    for container in data:
+        name = container.get('service')
+        if not name:
+            continue
+        metrics_store.setdefault(name, []).append({
+            'timestamp': container.get('timestamp') or datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            'cpu': container.get('cpu', 0),
+            'mem': container.get('mem', 0)
+        })
+        if len(metrics_store[name]) > 10:
+            metrics_store[name] = metrics_store[name][-10:]
+    return jsonify({"status": "ok"})
+
+@app.route('/api/service-metrics/<service>')
+def service_metrics(service):
+    return jsonify({
+        'metrics': metrics_store.get(service, [])
+    })
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0', port=5000)
