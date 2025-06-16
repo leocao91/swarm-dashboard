@@ -21,6 +21,7 @@ docker build -t swarm-dashboard .
 ```
 docker run -it -d -p 5000:5000 \
   -e FLASK_SECRET_KEY="supersecretkey" \
+  -e EXPECTED_TOKEN="authen-token"
   -e KEYCLOAK_BASE_URL="https://localhost:8080/" \  # URL Keycloak
   -e KEYCLOAK_REALM="myrealm" \ # Realm name
   -e KEYCLOAK_CLIENT_ID="client-id" \ # Client ID
@@ -38,3 +39,19 @@ Valid redirect URIs:  http://localhost:5000/oidc_callback
                       http://localhost:5000/*
 Valid post logout redirect URIs: http://localhost:5000/
 Web origins: *
+```
+### Worker set-up agent:
+```
+cd agent-worker
+docker build -t agent-worker-metric .
+```
+### Run image:
+```
+docker run -it -d -p 8000:8000 \
+  -e AUTH_TOKEN="authen-token" \
+  -e DASHBOARD_URL=""http://localhost:5000/api/push-metrics" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --name agent-worker-metric \
+  agent-worker-metric
+```
+```
