@@ -32,5 +32,5 @@ ENV FLASK_APP=app.py \
     FLASK_RUN_PORT=5000 \
     FLASK_ENV=production
 EXPOSE 5000
-CMD ["flask", "run"]
-
+# CMD ["flask", "run"]
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app", "--log-level=debug"]
