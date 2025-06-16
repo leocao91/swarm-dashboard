@@ -11,6 +11,8 @@ client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5000/api/push-metrics")
 PUSH_INTERVAL = int(os.environ.get("PUSH_INTERVAL", 10))
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "secret-token")
+
 
 def get_metrics():
     metrics = []
@@ -43,8 +45,8 @@ def get_metrics():
     return metrics
 
 
-AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "secret-token")
 def push_loop():
+    print("Push loop started...")
     headers = {
         "Authorization": f"Bearer {AUTH_TOKEN}",
         "Content-Type": "application/json"
@@ -55,16 +57,21 @@ def push_loop():
             data = get_metrics()
             if data:
                 res = requests.post(DASHBOARD_URL, json=data, headers=headers, timeout=3)
-                print("Pushed metrics:", res.status_code)
+                print("Pushed metrics:", DASHBOARD_URL, "- Status:", res.status_code)
         except Exception as e:
             print("Push failed:", e)
         time.sleep(PUSH_INTERVAL)
+
 
 @app.route("/health")
 def health():
     return "ok", 200
 
-if __name__ == "__main__":
-    t = threading.Thread(target=push_loop, daemon=True)
-    t.start()
-    app.run(host="0.0.0.0", port=8000)
+def start_push_thread():
+    if not getattr(app, "_push_thread_started", False):
+        print("Starting push thread...")
+        app._push_thread_started = True
+        t = threading.Thread(target=push_loop, daemon=True)
+        t.start()
+
+start_push_thread()
